@@ -5,10 +5,42 @@ import (
 	//"fmt"
 	"github.com/docopt/docopt-go"
 	"image"
-	//"image/color"
 	_ "image/png"
 	"io/ioutil"
 	"os"
+)
+
+type textureFormat int
+
+const (
+	bpp2 textureFormat = iota
+	bpp4
+	bpp8
+	bpp16
+	a3i5
+	a5i3
+	c4x4
+)
+
+var (
+	formatStrings = map[string]textureFormat{
+		"2bpp":  bpp2,
+		"4bpp":  bpp4,
+		"8bpp":  bpp8,
+		"16bpp": bpp16,
+		"a3i5":  a3i5,
+		"a5i3":  a5i3,
+		"4x4c":  c4x4,
+	}
+	bitsPerPixel = map[textureFormat]int{
+		bpp2:  2,
+		bpp4:  4,
+		bpp8:  8,
+		bpp16: 16,
+		a3i5:  8,
+		a5i3:  8,
+		c4x4:  2,
+	}
 )
 
 func main() {
@@ -16,9 +48,9 @@ func main() {
 
 Usage:
     dtex <input_filename> to (2bpp | 4bpp | 8bpp | 16bpp | a3i5 | a5i3 |
-      4x4c ) at <output_filename>
+      4x4c) at <output_filename>
     dtex <input_filename> to (2bpp | 4bpp | 8bpp | 16bpp | a3i5 | a5i3 |
-      4x4c ) palette at <output_filename>
+      4x4c) palette at <output_filename>
     dtex --help
     dtex --version
 
@@ -30,18 +62,21 @@ Options:
 	args, _ := docopt.Parse(usage, nil, true, "dtex 0.1.0", false)
 	infile := args["<input_filename>"].(string)
 	outfile := args["<output_filename>"].(string)
-	format := ""
+	format := bpp2
 	for _, f := range []string{"2bpp", "4bpp", "8bpp", "16bpp", "a3i5", "a5i3", "4x4c"} {
 		if args[f].(bool) {
-			format = f
+			format = formatStrings[f]
 			break
 		}
 	}
-	convert_pal := args["palette"].(bool)
-	convert_file(infile, outfile, format, convert_pal)
+	converter := convertPalettedImage
+	if args["palette"].(bool) {
+		converter = convertPalette
+	}
+	convert_file(infile, outfile, format, converter)
 }
 
-func convert_file(infile, outfile, format string, convert_pal bool) error {
+func convert_file(infile, outfile string, format textureFormat, converter func(*image.Paletted, textureFormat) ([]byte, error)) error {
 	src, err := os.Open(infile)
 	if err != nil {
 		return err
@@ -53,11 +88,11 @@ func convert_file(infile, outfile, format string, convert_pal bool) error {
 		return err
 	}
 	if palimg := img.(*image.Paletted); palimg != nil {
-		if convert_pal {
-			ioutil.WriteFile(outfile, convert_palette(palimg, format), 0644)
-		} else {
-			ioutil.WriteFile(outfile, convert_image(palimg, format), 0644)
+		output, err := converter(palimg, format)
+		if err != nil {
+			return err
 		}
+		ioutil.WriteFile(outfile, output, 0644)
 	} else {
 		return errors.New("non-paletted image formats are not yet supported")
 	}
@@ -65,27 +100,31 @@ func convert_file(infile, outfile, format string, convert_pal bool) error {
 }
 
 // TODO: Write the palette converter
-func convert_palette(img *image.Paletted, format string) []byte {
-	return make([]byte, 0)
-	//return make([]byte, len(img.ColorModel().(color.Palette)))
+func convertPalette(img *image.Paletted, format textureFormat) ([]byte, error) {
+	return nil, errors.New("palette conversion not yet implemented")
 }
 
-// TODO: Write the image converter
-// TODO: Rename using go conventions
-func convert_image(img *image.Paletted, format string) []byte {
-	bpp := 4
-	pixelsPerByte := 8 / bpp
-	outimg := make([]byte, len(img.Pix)/pixelsPerByte)
-	for outpix := 0; outpix < len(img.Pix)/pixelsPerByte; outpix++ {
-		outimg[outpix] = pack(img.Pix[outpix*pixelsPerByte:outpix*pixelsPerByte+pixelsPerByte], bpp)
+func convertPalettedImage(img *image.Paletted, format textureFormat) ([]byte, error) {
+	if format == bpp16 || format == c4x4 {
+		return nil, errors.New("requested format conversion not implemented")
 	}
-	return outimg
+	return convertToNBitImage(bitsPerPixel[format], img.Pix), nil
 }
 
 func pack(values []byte, shift int) byte {
+	var mask byte = (1 << uint(shift)) - 1
 	var b byte = 0
 	for i, value := range values {
-		b |= value << uint(i*shift)
+		b |= (value & mask) << uint(i*shift)
 	}
 	return b
+}
+
+func convertToNBitImage(bpp int, indexes []byte) []byte {
+	pixelsPerByte := 8 / bpp
+	outimg := make([]byte, len(indexes)/pixelsPerByte)
+	for outpix := 0; outpix < len(indexes)/pixelsPerByte; outpix++ {
+		outimg[outpix] = pack(indexes[outpix*pixelsPerByte:outpix*pixelsPerByte+pixelsPerByte], bpp)
+	}
+	return outimg
 }
