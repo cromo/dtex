@@ -2,9 +2,10 @@ package main
 
 import (
 	"errors"
-	//"fmt"
+	"fmt"
 	"github.com/docopt/docopt-go"
 	"image"
+	"image/color"
 	_ "image/png"
 	"io/ioutil"
 	"os"
@@ -56,9 +57,7 @@ Usage:
 
 Options:
     --help     Print this message and exit
-    --version  Show version number and exit
-    --format <format>  Output texture format; one of 2bpp, 4bpp, 8bpp, 16bpp,
-                       a3i5, a5i3, compressed`
+    --version  Show version number and exit`
 	args, _ := docopt.Parse(usage, nil, true, "dtex 0.1.0", false)
 	infile := args["<input_filename>"].(string)
 	outfile := args["<output_filename>"].(string)
@@ -73,7 +72,11 @@ Options:
 	if args["palette"].(bool) {
 		converter = convertPalette
 	}
-	convert_file(infile, outfile, format, converter)
+	err := convert_file(infile, outfile, format, converter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		os.Exit(1)
+	}
 }
 
 func convert_file(infile, outfile string, format textureFormat, converter func(*image.Paletted, textureFormat) ([]byte, error)) error {
@@ -99,9 +102,43 @@ func convert_file(infile, outfile string, format textureFormat, converter func(*
 	return nil
 }
 
-// TODO: Write the palette converter
 func convertPalette(img *image.Paletted, format textureFormat) ([]byte, error) {
-	return nil, errors.New("palette conversion not yet implemented")
+	bpp := bitsPerPixel[format]
+	pal := img.Palette
+	if format == bpp16 {
+		return nil, errors.New("16bpp images have no palette")
+	} else if format == c4x4 {
+		return nil, errors.New("4x4c conversion not implemented")
+	} else if format == a3i5 {
+		bpp = 5
+		pal = pal[256-(1<<5):]
+	} else if format == a5i3 {
+		bpp = 3
+		pal = pal[256-(1<<3):]
+	}
+	dspal := extractNBitPalette(bpp, pal)
+	bytes := make([]byte, 2*len(dspal))
+	for i := 0; i < len(dspal); i++ {
+		bytes[2*i] = byte(dspal[i] & 0xFF)
+		bytes[2*i+1] = byte(dspal[i] >> 8)
+	}
+	return bytes, nil
+}
+
+func extractNBitPalette(bpp int, pal color.Palette) []uint16 {
+	outpal := make([]uint16, 1<<uint(bpp))
+	n := len(outpal)
+	if len(pal) < n {
+		n = len(pal)
+	}
+	for i := 0; i < n; i++ {
+		r, g, b, _ := pal[i].RGBA()
+		r = (r >> 3) & 0x1F
+		g = (g >> 3) & 0x1F
+		b = (b >> 3) & 0x1F
+		outpal[i] = uint16(r | (g << 5) | (b << 10))
+	}
+	return outpal
 }
 
 func convertPalettedImage(img *image.Paletted, format textureFormat) ([]byte, error) {
