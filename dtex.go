@@ -49,10 +49,10 @@ func convert_file(infile, outfile, format string, convert_pal bool) error {
 	defer src.Close()
 
 	img, _, err := image.Decode(src)
-	if err !=  nil {
+	if err != nil {
 		return err
 	}
-	if palimg := img.(image.PalettedImage); palimg != nil {
+	if palimg := img.(*image.Paletted); palimg != nil {
 		if convert_pal {
 			ioutil.WriteFile(outfile, convert_palette(palimg, format), 0644)
 		} else {
@@ -65,12 +65,27 @@ func convert_file(infile, outfile, format string, convert_pal bool) error {
 }
 
 // TODO: Write the palette converter
-func convert_palette(img image.PalettedImage, format string) []byte {
+func convert_palette(img *image.Paletted, format string) []byte {
 	return make([]byte, 0)
 	//return make([]byte, len(img.ColorModel().(color.Palette)))
 }
 
 // TODO: Write the image converter
-func convert_image(img image.PalettedImage, format string) []byte {
-	return make([]byte, 0)
+// TODO: Rename using go conventions
+func convert_image(img *image.Paletted, format string) []byte {
+	bpp := 4
+	pixelsPerByte := 8 / bpp
+	outimg := make([]byte, len(img.Pix)/pixelsPerByte)
+	for outpix := 0; outpix < len(img.Pix)/pixelsPerByte; outpix++ {
+		outimg[outpix] = pack(img.Pix[outpix*pixelsPerByte:outpix*pixelsPerByte+pixelsPerByte], bpp)
+	}
+	return outimg
+}
+
+func pack(values []byte, shift int) byte {
+	var b byte = 0
+	for i, value := range values {
+		b |= value << uint(i*shift)
+	}
+	return b
 }
