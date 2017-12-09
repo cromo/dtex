@@ -72,14 +72,14 @@ Options:
 	if args["palette"].(bool) {
 		converter = convertPalette
 	}
-	err := convert_file(infile, outfile, format, converter)
+	err := convertFile(infile, outfile, format, converter)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func convert_file(infile, outfile string, format textureFormat, converter func(*image.Paletted, textureFormat) ([]byte, error)) error {
+func convertFile(infile, outfile string, format textureFormat, converter func(*image.Paletted, textureFormat) ([]byte, error)) error {
 	src, err := os.Open(infile)
 	if err != nil {
 		return err
